@@ -42,13 +42,15 @@
     .image-preview { display: none; max-height: 160px; max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
     .uploading-text { display: none; margin-top: 12px; font-size: 12px; color: var(--ntp-accent); letter-spacing: 0.5px; }
 
-    .widgets { width: 520px; margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
-    .widget-toggle { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; background: var(--ntp-card); border: 0.5px solid var(--ntp-border); cursor: pointer; transition: all .15s; font-size: 12px; color: var(--ntp-sub); }
-    .widget-toggle:hover { background: color-mix(in srgb, var(--ntp-accent) 8%, transparent); border-color: color-mix(in srgb, var(--ntp-accent) 30%, transparent); }
-    .widget-toggle .arrow { margin-left: auto; transition: transform .2s; font-size: 10px; color: var(--ntp-sub); }
-    .widget-toggle.open .arrow { transform: rotate(180deg); }
-    .widget-body { display: none; }
-    .widget-body.open { display: block; }
+    /* ── Widget Launcher & Overlay ──────────────────────────────── */
+    .widget-launcher { display: flex; gap: 6px; margin-top: 24px; }
+    .wl-btn { padding: 6px 14px; border-radius: 8px; border: 0.5px solid var(--ntp-border); background: var(--ntp-card); color: var(--ntp-sub); font-size: 12px; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 5px; }
+    .wl-btn:hover { background: color-mix(in srgb, var(--ntp-accent) 10%, transparent); border-color: color-mix(in srgb, var(--ntp-accent) 30%, transparent); color: var(--ntp-accent); }
+    .widget-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 99999; display: flex; align-items: center; justify-content: center; }
+    .widget-overlay-backdrop { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); }
+    .widget-overlay-panel { position: relative; background: var(--ntp-bg); border: 0.5px solid var(--ntp-border); border-radius: 14px; padding: 28px 24px 20px; min-width: 320px; max-width: 520px; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+    .widget-overlay-close { position: absolute; top: 8px; right: 10px; background: none; border: none; color: var(--ntp-sub); font-size: 16px; cursor: pointer; padding: 4px; line-height: 1; border-radius: 4px; transition: color .15s; }
+    .widget-overlay-close:hover { color: var(--ntp-text); }
 
     .stats-row { display: flex; gap: 12px; margin-bottom: 8px; width: 100%; }
     .stat-card { flex: 1; padding: 12px 14px; border-radius: 10px; background: var(--ntp-card); border: 0.5px solid var(--ntp-border); }
@@ -112,17 +114,14 @@
 
     /* ── Layout Manager ─────────────────────────────────────────── */
     [data-ntp-id] { position: relative; z-index: 1; }
-    [data-ntp-id="stats"],
-    [data-ntp-id="speed"],
-    [data-ntp-id="snake"],
-    [data-ntp-id="wordle"] { width: 520px; }
+    [data-ntp-id="stats"] { width: 520px; }
     .ntp-resize-handle { position: absolute; bottom: 0; right: 0; width: 14px; height: 14px; cursor: nwse-resize; display: none; z-index: 10; }
-    .ntp-resize-handle::after { content: ''; position: absolute; bottom: 2px; right: 2px; width: 8px; height: 2px; background: var(--ntp-sub); transform: rotate(-45deg); border-radius: 1px; }
-    .ntp-resize-handle::before { content: ''; position: absolute; bottom: 5px; right: 2px; width: 6px; height: 2px; background: var(--ntp-sub); transform: rotate(-45deg); border-radius: 1px; }
+    .ntp-resize-handle::after { content: ''; position: absolute; bottom: 3px; right: 3px; width: 6px; height: 6px; border-right: 2px solid var(--ntp-sub); border-bottom: 2px solid var(--ntp-sub); border-radius: 0 1px 1px; opacity: .6; }
     [data-ntp-id]:hover .ntp-resize-handle { display: block; }
     .layout-unlocked [data-ntp-id] { cursor: grab; }
     .layout-unlocked [data-ntp-id]:active { cursor: grabbing; }
-    .layout-unlocked [data-ntp-id] { outline: 1px dashed var(--ntp-sub); outline-offset: 2px; }
+    .layout-unlocked [data-ntp-id] { outline: 1.5px dotted var(--ntp-sub); outline-offset: 3px; }
+    .layout-unlocked body { background-image: radial-gradient(circle, var(--ntp-sub) .5px, transparent .5px); background-size: 20px 20px; }
   </style>
 </head>
 <body>
@@ -156,30 +155,22 @@
     </div>
   </div>
 
-  <div id="widgetSpeed" data-ntp-id="speed" style="display:none">
-    <div class="widget-toggle" id="toggleSpeed">
-      <span>🚀 Speed Test</span>
-      <span class="arrow">▼</span>
-    </div>
-    <div class="widget-body" id="bodySpeed"></div>
+  <div class="widget-launcher" id="widgetLauncher">
+    <button class="wl-btn" id="wlSpeed" data-wl="speed" title="Speed Test">🚀 Speed Test</button>
+    <button class="wl-btn" id="wlSnake" data-wl="snake" title="Snake Game">🐍 Snake</button>
+    <button class="wl-btn" id="wlWordle" data-wl="wordle" title="Wordle">📝 Wordle</button>
   </div>
 
-  <div id="widgetSnake" data-ntp-id="snake" style="display:none">
-    <div class="widget-toggle" id="toggleSnake">
-      <span>🐍 Snake Game</span>
-      <span class="badge badge-new">2D B&amp;W</span>
-      <span class="arrow">▼</span>
-    </div>
-    <div class="widget-body" id="bodySnake"></div>
-  </div>
+  <div id="bodySpeed" style="display:none"></div>
+  <div id="bodySnake" style="display:none"></div>
+  <div id="bodyWordle" style="display:none"></div>
 
-  <div id="widgetWordle" data-ntp-id="wordle" style="display:none">
-    <div class="widget-toggle" id="toggleWordle">
-      <span>📝 Wordle</span>
-      <span class="badge badge-new">Daily</span>
-      <span class="arrow">▼</span>
+  <div class="widget-overlay" id="widgetOverlay" style="display:none">
+    <div class="widget-overlay-backdrop"></div>
+    <div class="widget-overlay-panel">
+      <button class="widget-overlay-close" id="overlayClose">✕</button>
+      <div class="widget-overlay-body" id="overlayBody"></div>
     </div>
-    <div class="widget-body" id="bodyWordle"></div>
   </div>
 
   <div class="bm-section">

@@ -58,6 +58,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(err => sendResponse({ error: err.toString() }));
     return true;
   }
+  if (message.action === 'proxyFetchUrl') {
+    fetch(message.url)
+      .then(res => message.parseJson ? res.json() : res.text())
+      .then(data => sendResponse({ data }))
+      .catch(() => sendResponse({ data: null }));
+    return true;
+  }
   if (message.action === 'getTimeData') {
     chrome.storage.local.get('timeData', (data) => sendResponse(data.timeData || {}));
     return true;

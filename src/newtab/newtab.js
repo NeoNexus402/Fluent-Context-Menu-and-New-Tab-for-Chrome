@@ -37,11 +37,11 @@ chrome.storage.sync.get(['enableNewTab','showSearchBar','timeTrackerEnabled','sh
     loadTimeData();
   }
   if (data.showSpeedTest !== false) {
-    document.getElementById('widgetSpeed').style.display = 'block';
+    document.getElementById('wlSpeed').style.display = '';
   }
   if (data.showGames !== false) {
-    document.getElementById('widgetSnake').style.display = 'block';
-    document.getElementById('widgetWordle').style.display = 'block';
+    document.getElementById('wlSnake').style.display = '';
+    document.getElementById('wlWordle').style.display = '';
   }
 });
 
@@ -61,11 +61,11 @@ chrome.storage.onChanged.addListener((changes) => {
     }
   }
   if (changes.showSpeedTest) {
-    document.getElementById('widgetSpeed').style.display = changes.showSpeedTest.newValue ? 'block' : 'none';
+    document.getElementById('wlSpeed').style.display = changes.showSpeedTest.newValue ? '' : 'none';
   }
   if (changes.showGames) {
-    document.getElementById('widgetSnake').style.display = changes.showGames.newValue ? 'block' : 'none';
-    document.getElementById('widgetWordle').style.display = changes.showGames.newValue ? 'block' : 'none';
+    document.getElementById('wlSnake').style.display = changes.showGames.newValue ? '' : 'none';
+    document.getElementById('wlWordle').style.display = changes.showGames.newValue ? '' : 'none';
   }
   if (changes.showBookmarks) {
     if (changes.showBookmarks.newValue && !bm) {
@@ -90,11 +90,11 @@ chrome.runtime.onMessage.addListener((msg) => {
       if (msg.value) loadTimeData();
     }
     if (msg.key === 'showSpeedTest') {
-      document.getElementById('widgetSpeed').style.display = msg.value ? 'block' : 'none';
+      document.getElementById('wlSpeed').style.display = msg.value ? '' : 'none';
     }
     if (msg.key === 'showGames') {
-      document.getElementById('widgetSnake').style.display = msg.value ? 'block' : 'none';
-      document.getElementById('widgetWordle').style.display = msg.value ? 'block' : 'none';
+      document.getElementById('wlSnake').style.display = msg.value ? '' : 'none';
+      document.getElementById('wlWordle').style.display = msg.value ? '' : 'none';
     }
   }
 });
@@ -247,36 +247,44 @@ function loadTimeData() {
   setTimeout(loadTimeData, 30000);
 }
 
-// ── Widget Toggles ────────────────────────────────────────────────────────
-function setupToggle(toggleId, bodyId, onOpen) {
-  const toggle = document.getElementById(toggleId);
-  const body = document.getElementById(bodyId);
-  let opened = false;
-  toggle.addEventListener('click', () => {
-    toggle.classList.toggle('open');
-    body.classList.toggle('open');
-    if (!opened && body.classList.contains('open')) {
-      opened = true;
-      onOpen();
-    }
-  });
-}
-
-setupToggle('toggleSpeed', 'bodySpeed', () => {
-  const st = new SpeedTest(document.getElementById('bodySpeed'));
-  st.run();
-});
+// ── Widget Overlay System ────────────────────────────────────────────────
+const widgetOverlay = document.getElementById('widgetOverlay');
+const overlayBody = document.getElementById('overlayBody');
 
 let snake = null;
-setupToggle('toggleSnake', 'bodySnake', () => {
-  snake = new SnakeGame(document.getElementById('bodySnake'));
-  snake.start();
-});
-
 let wordle = null;
-setupToggle('toggleWordle', 'bodyWordle', () => {
-  wordle = new WordleGame(document.getElementById('bodyWordle'));
-  wordle.start();
+
+const widgetHandlers = {
+  speed: { init() { new SpeedTest(overlayBody).run(); } },
+  snake: { init() { if (!snake) snake = new SnakeGame(overlayBody); snake.start(); } },
+  wordle: { init() { if (!wordle) wordle = new WordleGame(overlayBody); wordle.start(); } },
+};
+
+function openWidget(name) {
+  const h = widgetHandlers[name];
+  if (!h) return;
+  if (activeWidget === name && widgetOverlay.style.display !== 'none') { closeWidget(); return; }
+  closeWidget();
+  overlayBody.innerHTML = '';
+  widgetOverlay.style.display = '';
+  activeWidget = name;
+  h.init();
+}
+
+function closeWidget() {
+  widgetOverlay.style.display = 'none';
+  activeWidget = null;
+}
+
+let activeWidget = null;
+
+document.querySelectorAll('.wl-btn').forEach(btn => {
+  btn.addEventListener('click', () => openWidget(btn.dataset.wl));
+});
+document.getElementById('overlayClose').addEventListener('click', closeWidget);
+document.querySelector('.widget-overlay-backdrop').addEventListener('click', closeWidget);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && activeWidget) closeWidget();
 });
 
 // ── NTP Layout Manager (drag/resize for all sections) ──────────────────────
@@ -355,7 +363,7 @@ class NtpLayoutManager {
     el._ntpDrag = (e) => {
       if (this.locked) return;
       if (e.button !== 0) return;
-      if (e.target.closest('.ntp-resize-handle, .widget-toggle, .search-tab, .search-btn, .bm-add-btn, .bm-help, .bm-ctx, .bm-del, button, input, a')) return;
+      if (e.target.closest('.ntp-resize-handle, .search-tab, .search-btn, .wl-btn, .bm-add-btn, .bm-help, .bm-ctx, .bm-del, button, input, a')) return;
       e.preventDefault();
       this.ensureLayout(id, el);
       this.drag = { id, el, startX: e.clientX, startY: e.clientY, origX: this.layout[id].x, origY: this.layout[id].y };
@@ -381,8 +389,9 @@ class NtpLayoutManager {
       const d = this.drag;
       const dx = e.clientX - d.startX;
       const dy = e.clientY - d.startY;
-      this.layout[d.id].x = d.origX + dx;
-      this.layout[d.id].y = d.origY + dy;
+      const snap = 20;
+      this.layout[d.id].x = Math.round((d.origX + dx) / snap) * snap;
+      this.layout[d.id].y = Math.round((d.origY + dy) / snap) * snap;
       d.el.style.left = this.layout[d.id].x + 'px';
       d.el.style.top = this.layout[d.id].y + 'px';
     }

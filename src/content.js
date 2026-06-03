@@ -89,6 +89,122 @@ async function copyImageToClipboard(url) {
 }
 
 
+// ── Spelling Suggestions ────────────────────────────────────────────────────
+function getWordAtCursor(el) {
+  if (!el) return null;
+  const isInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+  if (!isInput && !el.isContentEditable && !(el.closest && el.closest('[contenteditable="true"]'))) return null;
+  if (el.closest && el.closest('.image-dropzone')) return null;
+  if (isInput) {
+    if (el.selectionStart == null) return null;
+    const pos = el.selectionStart;
+    const val = el.value;
+    let s = pos, e = pos;
+    while (s > 0 && /\w/.test(val[s - 1])) s--;
+    while (e < val.length && /\w/.test(val[e])) e++;
+    return val.substring(s, e) || null;
+  }
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  const n = r.startContainer;
+  if (n && n.nodeType === 3) {
+    const txt = n.textContent || '';
+    const pos = r.startOffset;
+    let s = pos, e = pos;
+    while (s > 0 && /\w/.test(txt[s - 1])) s--;
+    while (e < txt.length && /\w/.test(txt[e])) e++;
+    return txt.substring(s, e) || null;
+  }
+  return null;
+}
+
+async function fetchSuggestions(word) {
+  if (!word || word.length < 2) return [];
+  const url = `https://api.datamuse.com/sug?s=${encodeURIComponent(word)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    return data.map(d => d.word).filter(w => w.toLowerCase() !== word.toLowerCase()).slice(0, 3);
+  } catch (e) {
+    // Fallback via background script (bypasses extension page CSP)
+    try {
+      return new Promise(resolve => {
+        chrome.runtime.sendMessage({ action: 'proxyFetchUrl', url, parseJson: true }, r => {
+          if (r && r.data) resolve(r.data.map(d => d.word).filter(w => w.toLowerCase() !== word.toLowerCase()).slice(0, 3));
+          else resolve([]);
+        });
+      });
+    } catch(e2) {
+      return [];
+    }
+  }
+}
+
+function replaceWordAtCursor(el, newWord) {
+  const isInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+  if (isInput) {
+    const pos = el.selectionStart;
+    const val = el.value;
+    let s = pos, e = pos;
+    while (s > 0 && /\w/.test(val[s - 1])) s--;
+    while (e < val.length && /\w/.test(val[e])) e++;
+    el.value = val.substring(0, s) + newWord + val.substring(e);
+    el.selectionStart = el.selectionEnd = s + newWord.length;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  const n = r.startContainer;
+  if (n && n.nodeType === 3) {
+    const txt = n.textContent || '';
+    const pos = r.startOffset;
+    let s = pos, e = pos;
+    while (s > 0 && /\w/.test(txt[s - 1])) s--;
+    while (e < txt.length && /\w/.test(txt[e])) e++;
+    n.textContent = txt.substring(0, s) + newWord + txt.substring(e);
+    const nr = document.createRange();
+    nr.setStart(n, s + newWord.length);
+    nr.setEnd(n, s + newWord.length);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+  }
+}
+
+function addSpellingGroup(menuEl, suggestions, word, targetEl) {
+  if (!menuEl || !menuEl.parentNode) return;
+  const t = THEMES[cfg.theme] || THEMES.dark;
+  // Prepend in reverse DOM-insertion order so visual order is: header → items → sep → rest
+  const sep = document.createElement('hr');
+  Object.assign(sep.style, { border: 'none', borderTop: `0.5px solid ${t.sep}`, margin: '3px 10px' });
+  menuEl.prepend(sep);
+  suggestions.slice().reverse().forEach(s => {
+    const row = document.createElement('div');
+    row.setAttribute('role', 'menuitem');
+    row.setAttribute('tabindex', '0');
+    row.innerHTML = `<span style="margin-right:10px;color:var(--ntp-accent, #60a5fa);font-size:10px">↳</span><span>${s}</span>`;
+    Object.assign(row.style, {
+      display: 'flex', alignItems: 'center', gap: '4px',
+      padding: '7px 12px 7px 20px', cursor: 'pointer', color: t.text,
+      borderRadius: '6px', margin: '1px 4px', transition: 'background .1s'
+    });
+    row.onmouseenter = () => row.style.background = t.hover;
+    row.onmouseleave = () => row.style.background = '';
+    row.onclick = () => { replaceWordAtCursor(targetEl, s); removeMenu(); };
+    menuEl.prepend(row);
+  });
+  const hdr = document.createElement('div');
+  hdr.textContent = `SPELLING (${word})`;
+  Object.assign(hdr.style, { padding: '4px 12px 2px', fontSize: '10px', letterSpacing: '.08em', color: t.sub });
+  menuEl.prepend(hdr);
+  const mr = menuEl.getBoundingClientRect();
+  if (mr.right > window.innerWidth) menuEl.style.left = (window.innerWidth - mr.width) + 'px';
+  if (mr.bottom > window.innerHeight) menuEl.style.top = (window.innerHeight - mr.height) + 'px';
+}
+
 function findLink(el) {
   if (el.tagName === 'A' && el.href) return el.href;
   if (el.closest) {
@@ -219,12 +335,15 @@ function getMenuItems(target) {
     }
   }
 
-  // 5. STANDARD PAGE TOOLS
-  items.push({ group: 'Page', items: [
-    { id:'src',    label:'View Source', icon:'🌐', shortcut:'Ctrl+U', action: () => chrome.runtime.sendMessage({ action: 'openTab', url: 'view-source:' + location.href }) },
-    { id:'print',  label:'Print',       icon:'🖨️', shortcut:'Ctrl+P', action: () => window.print() },
-    { id:'reload', label:'Reload Page', icon:'🔄', shortcut:'F5',     action: () => location.reload() },
-  ]});
+  // 5. STANDARD PAGE TOOLS (hidden when right-clicking a word in an editable field)
+  const isSpellcheckWord = (isEditable && !isDropzone && getWordAtCursor(target) !== null);
+  if (!isSpellcheckWord) {
+    items.push({ group: 'Page', items: [
+      { id:'src',    label:'View Source', icon:'🌐', shortcut:'Ctrl+U', action: () => chrome.runtime.sendMessage({ action: 'openTab', url: 'view-source:' + location.href }) },
+      { id:'print',  label:'Print',       icon:'🖨️', shortcut:'Ctrl+P', action: () => window.print() },
+      { id:'reload', label:'Reload Page', icon:'🔄', shortcut:'F5',     action: () => location.reload() },
+    ]});
+  }
 
   return items;
 }
@@ -302,6 +421,18 @@ document.addEventListener('contextmenu', e => {
 
   e.preventDefault();
   buildMenu(e.clientX, e.clientY, e.target);
+
+  // ── Spelling Suggestions ──
+  try {
+    const word = getWordAtCursor(e.target);
+    if (word && word.length > 1) {
+      const savedMenu = menu;
+      const savedTarget = e.target;
+      fetchSuggestions(word).then(sugs => {
+        if (sugs.length > 0) addSpellingGroup(savedMenu, sugs, word, savedTarget);
+      }).catch(() => {});
+    }
+  } catch(ex) { /* silently fail */ }
 }, true);
 
 document.addEventListener('mousedown', e => {

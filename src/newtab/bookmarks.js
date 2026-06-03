@@ -128,8 +128,9 @@ class BookmarkManager {
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._dragMoved = true;
-      bm.x = startL + dx;
-      bm.y = startT + dy;
+      const snap = 20;
+      bm.x = Math.round((startL + dx) / snap) * snap;
+      bm.y = Math.round((startT + dy) / snap) * snap;
       el.style.left = bm.x + 'px';
       el.style.top = bm.y + 'px';
     };

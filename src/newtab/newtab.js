@@ -36,10 +36,10 @@ chrome.storage.sync.get(['enableNewTab','showSearchBar','timeTrackerEnabled','sh
     document.getElementById('statsRow').style.display = 'flex';
     loadTimeData();
   }
-  if (data.showSpeedTest !== false) {
+  if (data.showSpeedTest === true) {
     document.getElementById('wlSpeed').style.display = '';
   }
-  if (data.showGames !== false) {
+  if (data.showGames === true) {
     document.getElementById('wlSnake').style.display = '';
     document.getElementById('wlWordle').style.display = '';
   }
